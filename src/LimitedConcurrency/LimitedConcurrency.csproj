@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
+    <LangVersion>9</LangVersion>
+    <RootNamespace>LimitedConcurrency</RootNamespace>
+  </PropertyGroup>
+  <PropertyGroup>
+    <Authors>Andrew Khmylov</Authors>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/khmylov/limited-concurrency</RepositoryUrl>
+    <PackageId>LimitedConcurrency</PackageId>
+    <PackageProjectUrl>https://github.com/khmylov/limited-concurrency</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Product>LimitedConcurrency</Product>
+    <PackageTags>concurrent,parallel,concurrency,parallelism,partition</PackageTags>
+    <Description>Utilities for concurrent message processing with configurable degree of parallelism, and per-partition ordering</Description>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
+    <TreatSpecificWarningsAsErrors/>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
+    <TreatSpecificWarningsAsErrors/>
+  </PropertyGroup>
+
+
+</Project>

@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LimitedConcurrency", "LimitedConcurrency\LimitedConcurrency.csproj", "{36973B26-FEC2-4F3F-9C88-258F335208A9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LimitedConcurrency.Tests", "LimitedConcurrency.Tests\LimitedConcurrency.Tests.csproj", "{A11B6D25-91AE-4EB1-AFAE-ECB3DF9FCF63}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "attached", "attached", "{94DD5837-92B0-4A70-B8BE-5AFECA10C473}"
+ProjectSection(SolutionItems) = preProject
+	..\.editorconfig = ..\.editorconfig
+	..\.gitattributes = ..\.gitattributes
+	..\.gitignore = ..\.gitignore
+	..\LICENSE = ..\LICENSE
+	..\README.md = ..\README.md
+EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A11B6D25-91AE-4EB1-AFAE-ECB3DF9FCF63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A11B6D25-91AE-4EB1-AFAE-ECB3DF9FCF63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A11B6D25-91AE-4EB1-AFAE-ECB3DF9FCF63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A11B6D25-91AE-4EB1-AFAE-ECB3DF9FCF63}.Release|Any CPU.Build.0 = Release|Any CPU
+		{36973B26-FEC2-4F3F-9C88-258F335208A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{36973B26-FEC2-4F3F-9C88-258F335208A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{36973B26-FEC2-4F3F-9C88-258F335208A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{36973B26-FEC2-4F3F-9C88-258F335208A9}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
