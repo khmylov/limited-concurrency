@@ -16,7 +16,6 @@ namespace LimitedConcurrency
 
         private readonly ConcurrentQueue<Func<Task>> _queue;
 
-        // `volatile` because it's exposed to external callers via `QueueLength` property
         private volatile int _queueLength;
 
         private int _activeJobCount;
@@ -35,7 +34,7 @@ namespace LimitedConcurrency
         /// <summary>
         /// Adds the specified job to the queue to be executed when there is an idle execution slot.
         /// </summary>
-        /// <exception cref="NullReferenceException">If <see cref="item"/> is null.</exception>
+        /// <exception cref="NullReferenceException">If <paramref name="item"/> is null.</exception>
         public void Enqueue(Func<Task> item)
         {
             if (item is null) throw new NullReferenceException(nameof(item));

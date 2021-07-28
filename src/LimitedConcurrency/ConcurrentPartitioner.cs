@@ -19,7 +19,7 @@ namespace LimitedConcurrency
 
         private readonly object _cleanUpSync = new();
 
-        private int _currentPartitionCount;
+        private volatile int _currentPartitionCount;
 
         /// <summary>
         /// Returns the number of different partition keys across all enqueued jobs.
@@ -46,7 +46,7 @@ namespace LimitedConcurrency
         /// Adds a job to the end of the queue with a specified partition key.
         /// </summary>
         /// <returns>Task which allows consumers to wait for a job to be dequeued and completed.</returns>
-        /// <exception cref="ArgumentNullException">If <see cref="partitionKey"/> or <see cref="job"/> is null.</exception>
+        /// <exception cref="ArgumentNullException">If <paramref name="partitionKey"/> or <paramref name="job"/> is null.</exception>
         [SuppressMessage("ReSharper", "UnusedMember.Global")]
         public Task<TResult> ExecuteAsync(
             string partitionKey,
