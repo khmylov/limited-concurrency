@@ -11,6 +11,7 @@ ProjectSection(SolutionItems) = preProject
 	..\.gitignore = ..\.gitignore
 	..\LICENSE = ..\LICENSE
 	..\README.md = ..\README.md
+	..\CHANGELOG.md = ..\CHANGELOG.md
 EndProjectSection
 EndProject
 Global

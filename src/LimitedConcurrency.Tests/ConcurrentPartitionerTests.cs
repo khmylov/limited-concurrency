@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Shouldly;
+using static LimitedConcurrency.Tests.TestUtils;
 
 namespace LimitedConcurrency.Tests
 {
@@ -11,14 +12,13 @@ namespace LimitedConcurrency.Tests
     public class ConcurrentPartitionerTests
     {
         [Test]
+        [Repeat(10)]
         public async Task ShouldExecuteMessagesOneByOneInTheSameOrderTheyArrived()
         {
             var counter = 0;
 
-            async Task<int> Execute(ManualResetEventSlim sync, int taskId)
+            async Task<int> Execute(ManualResetEventSlim sync)
             {
-                Console.WriteLine($"Starting task {taskId}");
-
                 // If there is a bug in the partitioner,
                 // which doesn't force sequential execution...
                 await WaitAsync(sync).ConfigureAwait(false);
@@ -26,17 +26,16 @@ namespace LimitedConcurrency.Tests
                 // ... then the value of the counter here will not correspond
                 // to the task ID, and the final assert will fail.
                 var newCounter = Interlocked.Increment(ref counter);
-                Console.WriteLine($"Completed task {taskId}");
                 return newCounter;
             }
 
-            var partitioner = new ConcurrentPartitioner<int>();
+            var partitioner = CreatePartitioner<int>();
 
             var sync1 = new ManualResetEventSlim(false);
             var sync2 = new ManualResetEventSlim(false);
 
-            var task1 = partitioner.ExecuteAsync("Key1", () => Execute(sync1, 1));
-            var task2 = partitioner.ExecuteAsync("Key1", () => Execute(sync2, 2));
+            var task1 = partitioner.ExecuteAsync("Key1", () => Execute(sync1));
+            var task2 = partitioner.ExecuteAsync("Key1", () => Execute(sync2));
 
             // First, allow the second task to start
             sync2.Set();
@@ -52,47 +51,94 @@ namespace LimitedConcurrency.Tests
 
             Assert.That(result1, Is.EqualTo(1));
             Assert.That(result2, Is.EqualTo(2));
+
+            Assert.That(partitioner.CurrentPartitionCount, Is.EqualTo(0));
         }
 
         [Test]
+        [Repeat(10)]
+        public async Task ShouldNotExecuteMoreThanOneMessagePerPartitionAtTheSameTime()
+        {
+            const int taskCount = 1000;
+            const int iterationsPerTask = 1;
+            const int partitionsCount = 40;
+
+            var completedCount = 0;
+            var startSync = new ManualResetEventSlim();
+
+            var processingState = Enumerable.Repeat(0, partitionsCount).ToArray();
+            var partitioner = CreatePartitioner<object?>();
+
+            var tasks = Enumerable.Range(1, taskCount)
+                .Select(taskIndex => SimulateParallelism(async () =>
+                {
+                    var partitionKey = (taskIndex % partitionsCount);
+                    startSync.Wait();
+                    for (var iterationIndex = 0; iterationIndex < iterationsPerTask; iterationIndex++)
+                    {
+                        await partitioner.ExecuteAsync(partitionKey.ToString(), async () =>
+                        {
+                            var value1 = Interlocked.Increment(ref processingState[partitionKey]);
+                            Assert.AreEqual(
+                                1, value1,
+                                "If partitioner works correctly, then there should never be more than 1 message per partition processed at the same time");
+                            await Task.Delay(1);
+
+                            var value2 = Interlocked.Decrement(ref processingState[partitionKey]);
+                            Assert.AreEqual(
+                                0, value2,
+                                "If partitioner works correctly, no other message in that partition should be able to interfere and change the counter value");
+                            Interlocked.Increment(ref completedCount);
+                            return null;
+                        });
+                    }
+                }))
+                .ToArray();
+
+            startSync.Set();
+            await Task.WhenAll(tasks);
+            Assert.AreEqual(taskCount * iterationsPerTask, completedCount);
+        }
+
+        [Test]
+        [Repeat(10)]
         public async Task ShouldNeverExecuteMoreThanOneMessagePerPartitionAtTheSameTime(
             [Values(5, 10, 100, 1000)] int taskCount,
             [Values(1, 4, 10)] int partitionCount)
         {
             var completedCount = 0;
+            var startSync = new ManualResetEventSlim();
 
             var processingState = Enumerable.Repeat(0, partitionCount).ToArray();
 
-            async Task<object?> Execute(int taskId, int partitionKey)
-            {
-                Console.WriteLine($"Starting task {taskId} in partition {partitionKey}");
-
-                var value1 = Interlocked.Increment(ref processingState![partitionKey]);
-                Assert.AreEqual(
-                    1, value1,
-                    "If partitioner works correctly, then there should never be more than 1 message per partition processed at the same time");
-                await Task.Yield();
-
-                var value2 = Interlocked.Decrement(ref processingState[partitionKey]);
-                Assert.AreEqual(
-                    0, value2,
-                    "If partitioner works correctly, no other message in that partition should be able to interfere and change the counter value");
-                Interlocked.Increment(ref completedCount);
-                return null;
-            }
-
-            var partitioner = new ConcurrentPartitioner<object?>();
+            var partitioner = CreatePartitioner<object?>();
 
             var messages = Enumerable.Range(1, taskCount)
                 .Select(taskNumber => (TaskId: taskNumber, PartitionKey: taskNumber % partitionCount))
                 .ToArray();
 
             var tasks = messages
-                // It's important to use Task.Run here to simulate multithreaded environment
-                .Select<(int TaskId, int PartitionKey), Task>(x => Task.Run(() =>
-                    partitioner.ExecuteAsync(x.PartitionKey.ToString(),
-                        () => Execute(x.TaskId, x.PartitionKey))))
+                .Select<(int TaskId, int PartitionKey), Task>(x => SimulateParallelism(() => partitioner.ExecuteAsync(
+                    x.PartitionKey.ToString(),
+                    async () =>
+                    {
+                        EnsureConcurrentPartitionCount(partitioner, partitionCount);
+                        var value1 = Interlocked.Increment(ref processingState[x.PartitionKey]);
+                        Assert.AreEqual(
+                            1, value1,
+                            "If partitioner works correctly, then there should never be more than 1 message per partition processed at the same time");
+                        await Task.Yield();
+                        EnsureConcurrentPartitionCount(partitioner, partitionCount);
+
+                        var value2 = Interlocked.Decrement(ref processingState[x.PartitionKey]);
+                        Assert.AreEqual(
+                            0, value2,
+                            "If partitioner works correctly, no other message in that partition should be able to interfere and change the counter value");
+                        Interlocked.Increment(ref completedCount);
+                        return null;
+                    })))
                 .ToArray();
+            startSync.Set();
             await Task.WhenAll(tasks);
 
             Assert.AreEqual(taskCount, completedCount);
@@ -101,7 +147,7 @@ namespace LimitedConcurrency.Tests
         [Test]
         public async Task OneFailedMessageShouldNotBlockOrFailFollowingMessagesInPartition()
         {
-            var partitioner = new ConcurrentPartitioner<object?>();
+            var partitioner = CreatePartitioner<object?>();
 
             Task<object?> Execute(int taskId)
             {
@@ -133,21 +179,25 @@ namespace LimitedConcurrency.Tests
         }
 
         [Test]
+        [Repeat(10)]
         public async Task ShouldRunDifferentPartitionsInParallel()
         {
-            var count = 100;
+            const int count = 100;
             var startedFlags = Enumerable.Range(1, count).Select(_ => false).ToArray();
             var completedFlags = Enumerable.Range(1, count).Select(_ => false).ToArray();
-            var sync = new TaskCompletionSource<object?>();
+            var startSync = new ManualResetEventSlim();
+            var canContinueInner =
+                new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            var partitioner = new ConcurrentPartitioner<object?>();
+            var partitioner = CreatePartitioner<object?>();
 
             Task<object?> Execute(int number)
             {
                 return partitioner.ExecuteAsync(number.ToString(), async () =>
                 {
+                    startSync.Wait();
                     startedFlags[number] = true;
-                    await sync.Task;
+                    await canContinueInner.Task;
                     completedFlags[number] = true;
                     return null;
                 });
@@ -155,72 +205,86 @@ namespace LimitedConcurrency.Tests
 
             var tasks = Enumerable
                 .Range(0, count)
-                .Select(number => Task.Run(() => Execute(number)))
+                .Select(number => SimulateParallelism(() => Execute(number)))
                 .ToArray();
 
-            await Task.Delay(10);
+            startSync.Set();
+            await SpinWaitFor(() => startedFlags.All(x => x));
 
             Assert.AreEqual(
-                Enumerable.Range(1, count).Select(x => true).ToArray(),
+                Enumerable.Range(1, count).Select(_ => true).ToArray(),
                 startedFlags,
                 "All computations should be started");
 
             Assert.AreEqual(
-                Enumerable.Range(1, count).Select(x => false).ToArray(),
+                Enumerable.Range(1, count).Select(_ => false).ToArray(),
                 completedFlags,
                 "None of computations should be completed yet");
 
-            sync.SetResult(null);
+            canContinueInner.SetResult(null);
             await Task.WhenAll(tasks);
             Assert.AreEqual(
-                Enumerable.Range(1, count).Select(x => true).ToArray(),
+                Enumerable.Range(1, count).Select(_ => true).ToArray(),
                 completedFlags,
                 "All computations should be finished");
         }
 
         [Test]
+        [Repeat(10)]
         public async Task ShouldCorrectlyCleanUpPartitions()
         {
-            var count = 100;
-            var startedFlags = Enumerable.Range(1, count).Select(x => false).ToArray();
-            var completedFlags = Enumerable.Range(1, count).Select(x => false).ToArray();
+            const int count = 100;
+            const int partitionCount = 3;
+            var startSync = new ManualResetEventSlim();
+            var startedFlags = Enumerable.Range(1, count).Select(_ => false).ToArray();
+            var completedFlags = Enumerable.Range(1, count).Select(_ => false).ToArray();
 
-            var partitioner = new ConcurrentPartitioner<object?>();
-
-            Task<object?> Execute(int number)
-            {
-                return partitioner.ExecuteAsync(
-                    (number % 3).ToString(),
-                    async () =>
-                    {
-                        startedFlags[number] = true;
-                        await Task.Delay(number % 3 + 1);
-                        completedFlags[number] = true;
-                        return null;
-                    });
-            }
+            var partitioner = CreatePartitioner<object?>();
 
             var tasks = Enumerable
                 .Range(0, count)
-                .Select(number => Task.Run(() => Execute(number)))
+                .Select(number => SimulateParallelism(() => partitioner.ExecuteAsync(
+                    (number % partitionCount).ToString(),
+                    async () =>
+                    {
+                        startSync.Wait();
+                        EnsureConcurrentPartitionCount(partitioner, partitionCount);
+                        startedFlags[number] = true;
+                        await Task.Delay(1).ConfigureAwait(false);
+                        EnsureConcurrentPartitionCount(partitioner, partitionCount);
+                        completedFlags[number] = true;
+                        return null;
+                    })))
                 .ToArray();
 
-            await Task.WhenAll(tasks);
+            startSync.Set();
 
-            // To ensure that cleanup computation is called
-            await Task.Delay(10);
+            await Task.WhenAll(tasks);
 
             Assert.That(partitioner.CurrentPartitionCount, Is.EqualTo(0));
 
             Assert.AreEqual(
-                Enumerable.Range(1, count).Select(x => true).ToArray(),
+                Enumerable.Range(1, count).Select(_ => true).ToArray(),
                 completedFlags,
                 "All computations should be finished");
+        }
+
+        private static ConcurrentPartitioner<T> CreatePartitioner<T>()
+        {
+            return new ConcurrentPartitioner<T>();
         }
 
         private static Task WaitAsync(ManualResetEventSlim sync)
         {
             return Task.Run(sync.Wait);
         }
+
+        private static void EnsureConcurrentPartitionCount<T>(ConcurrentPartitioner<T> partitioner, int expectedMax)
+        {
+            Assert.That(
+                partitioner.CurrentPartitionCount,
+                Is.LessThanOrEqualTo(expectedMax));
+        }
+
     }
 }
