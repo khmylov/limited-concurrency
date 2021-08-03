@@ -15,9 +15,7 @@ namespace LimitedConcurrency
     [SuppressMessage("ReSharper", "UnusedType.Global")]
     public class ConcurrentPartitioner<TResult>
     {
-        private readonly ConcurrentDictionary<string, LimitedParallelExecutor> _dictionary = new();
-
-        private readonly object _cleanUpSync = new();
+        private readonly ConcurrentDictionary<string, Trackable<LimitedParallelExecutor>> _dictionary = new();
 
         private volatile int _currentPartitionCount;
 
@@ -57,22 +55,28 @@ namespace LimitedConcurrency
 
             var tcs = new TaskCompletionSource<TResult>();
             var request = new PartitionRequest(job, tcs);
-            LimitedParallelExecutor executor;
+            Trackable<LimitedParallelExecutor> entry;
 
-            lock (_cleanUpSync)
+            while (true)
             {
-                executor = _dictionary.GetOrAdd(
+                entry = _dictionary.GetOrAdd(
                     partitionKey,
-                    _ =>
-                    {
-                        Interlocked.Increment(ref _currentPartitionCount);
-                        return new LimitedParallelExecutor(1);
-                    });
+                    _ => new Trackable<LimitedParallelExecutor>(new LimitedParallelExecutor(1)));
+
+                if (entry.GetIsNewOnce())
+                {
+                    Interlocked.Increment(ref _currentPartitionCount);
+                }
+
+                if (entry.TryEnter())
+                {
+                    break;
+                }
             }
 
             Interlocked.Increment(ref _totalQueueSize);
 
-            executor.Enqueue(async () =>
+            entry.Value.Enqueue(async () =>
             {
                 request.CreatedAt.Stop();
                 var onQueueWaitCompleted = OnQueueWaitCompleted;
@@ -88,17 +92,16 @@ namespace LimitedConcurrency
                     }
                 }
 
-                await ExecuteImpl(request).ConfigureAwait(false);
-
-                Interlocked.Decrement(ref _totalQueueSize);
-                lock (_cleanUpSync)
+                await ExecuteImpl(request, () =>
                 {
-                    if (executor.QueueLength == 0)
+                    Interlocked.Decrement(ref _totalQueueSize);
+                    if (entry.ExitAndTryCleanup())
                     {
                         Interlocked.Decrement(ref _currentPartitionCount);
                         _dictionary.TryRemove(partitionKey, out _);
                     }
-                }
+                }).ConfigureAwait(false);
+
             });
 
             return tcs.Task;
@@ -107,7 +110,7 @@ namespace LimitedConcurrency
         /// <remarks>
         /// This method should not throw exceptions
         /// </remarks>
-        private static async Task ExecuteImpl(PartitionRequest request)
+        private static async Task ExecuteImpl(PartitionRequest request, Action beforeResolveSafe)
         {
             TResult result;
             try
@@ -116,10 +119,12 @@ namespace LimitedConcurrency
             }
             catch (Exception ex)
             {
+                beforeResolveSafe();
                 request.CompletionSource.TrySetException(ex);
                 return;
             }
 
+            beforeResolveSafe();
             request.CompletionSource.TrySetResult(result);
         }
 

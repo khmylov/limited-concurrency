@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Shouldly;
+using static LimitedConcurrency.Tests.TestUtils;
 
 namespace LimitedConcurrency.Tests
 {
@@ -20,6 +20,8 @@ namespace LimitedConcurrency.Tests
         ///
         /// On the other hand, doing so creates an overhead when executor is used as a part of other scheduling configuration, e.g.
         /// LimitedParallelExecutor (global degree of parallelism) -> Partitioner -> LimitedParallelExecutor (ordering within a partition).
+        ///
+        /// Note that you may need to adjust tests if you remove this behavior, and simulate parallelism manually.
         /// </remarks>
         [Test]
         public async Task ShouldRunConcurrentlyEvenIfCallbacksAreSynchronous()
@@ -137,7 +139,29 @@ namespace LimitedConcurrency.Tests
         }
 
         [Test]
-        [Repeat(5)]
+        [Repeat(10)]
+        public async Task ShouldNotExceedDegreeOfParallelism()
+        {
+            const int concurrencyLimit = 1;
+            var runningCount = 0;
+            var executor = new LimitedParallelExecutor(concurrencyLimit);
+            var startSync = new ManualResetEventSlim();
+            var tasks = Enumerable.Range(1, 10000).Select(index => executor.ExecuteAsync(async _ =>
+            {
+                startSync.Wait();
+                await Task.Yield();
+                Interlocked.Increment(ref runningCount).ShouldBeLessThanOrEqualTo(concurrencyLimit);
+                await Task.Yield();
+                Interlocked.Decrement(ref runningCount);
+            }, index, default));
+
+            startSync.Set();
+
+            await Task.WhenAll(tasks);
+        }
+
+        [Test]
+        [Repeat(10)]
         public async Task ShouldExecuteCallbacksInFirstInFirstOutOrder()
         {
             var lastNumber = 0;
@@ -178,30 +202,8 @@ namespace LimitedConcurrency.Tests
 
         private static Task WaitAsync(ManualResetEventSlim handle)
         {
+            // ReSharper disable once ConvertClosureToMethodGroup
             return Task.Run(() => handle.Wait());
-        }
-
-        private static async Task SpinWaitFor(Func<bool> condition)
-        {
-            using (var cancellationTokenSource = new CancellationTokenSource(Debugger.IsAttached ? 60_000 : 1000))
-            {
-                var cancellationToken = cancellationTokenSource.Token;
-                var winner = await Task.WhenAny(
-                    Task.Delay(-1, cancellationToken),
-                    Task.Run(() =>
-                    {
-                        var spinWait = new SpinWait();
-                        while (!condition())
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            spinWait.SpinOnce();
-                        }
-                    }, cancellationToken)
-                );
-                cancellationToken.IsCancellationRequested.ShouldBe(false,
-                    $"{nameof(SpinWaitFor)} cancelled by a timeout");
-                await winner;
-            }
         }
     }
 }
