@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Next
+## [1.0.2] - 2021-08-04
 ### Changed
 - FIX [#1](https://github.com/khmylov/limited-concurrency/issues/1): `ConcurrentPartitioner.CurrentPartitionCount` may become negative
   - This should also fix an issue when more than 1 concurrent action may be executed per partition at a single point in time.
