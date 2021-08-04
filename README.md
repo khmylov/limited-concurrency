@@ -36,6 +36,7 @@ Job A finished
 ## Notes
 
 - Executor maintains FIFO order, Tasks are started in the order they were enqueued
+    - FIFO order is guaranteed only when clients synchronize `Enqueue` call order.
 - Executor schedules Tasks via `Task.Run`, i.e. on default thread pool scheduler, to ensure that executed is truly parallel even if passed `Func<Task>` implementations are synchronous and blocking.
 
 # ConcurrentPartitioner
@@ -79,5 +80,7 @@ Job B2 finished
 ## Notes
 - Unlike `LimitedParallelExecutor`, this partitioner does guarantee FIFO order **across multiple partitions** (note that B1 may be started before A1)
     - However, FIFO order is guaranteed within a single partition key
-- `ConcurrentPartitioner` uses `LimitedParallelExecutor` with `degreeOfParallelism: 1` for each partition key
+    - FIFO order is guaranteed when the clients synchronize access to the _synchronous_ part of `ExecuteAsync`
+- You can specify custom per partition concurrency limit via `ConcurrentPartitioner`'s constructor.
+    - Just like with `LimitedParallelExecutor`, FIFO task start order is maintained if clients synchronize calls to `ExecuteAsync`.
 - You can wrap `ConcurrentPartitioner` into another `LimitedParallelExecutor` to enforce a global degree of parallelism across all partitions.

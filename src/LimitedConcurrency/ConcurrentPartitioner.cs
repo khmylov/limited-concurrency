@@ -9,13 +9,30 @@ namespace LimitedConcurrency
 {
     /// <summary>
     /// Partitions jobs by some key to allow concurrent execution of jobs with the different keys,
-    /// while jobs with the same key are executed sequentially.
+    /// while jobs with the same key are executed with the specified max concurrency level.
+    /// Tasks within the same partition key are guaranteed to start in the order of their respective <see cref="ExecuteAsync"/> calls.
     /// </summary>
     /// <typeparam name="TResult">Type of value returned by enqueued jobs.</typeparam>
     [SuppressMessage("ReSharper", "UnusedType.Global")]
     public class ConcurrentPartitioner<TResult>
     {
+        private readonly int _partitionConcurrency;
         private readonly ConcurrentDictionary<string, Trackable<LimitedParallelExecutor>> _dictionary = new();
+
+        public ConcurrentPartitioner()
+            : this(1)
+        {
+        }
+
+        /// <param name="partitionConcurrency">The max number of tasks to execute concurrently per partition.</param>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="partitionConcurrency"/> is less than 1.</exception>
+        public ConcurrentPartitioner(int partitionConcurrency)
+        {
+            _partitionConcurrency = partitionConcurrency < 1
+                ? throw new ArgumentOutOfRangeException(nameof(partitionConcurrency), 1,
+                    "Max partition concurrency should be a positive number")
+                : partitionConcurrency;
+        }
 
         private volatile int _currentPartitionCount;
 
@@ -43,6 +60,9 @@ namespace LimitedConcurrency
         /// <summary>
         /// Adds a job to the end of the queue with a specified partition key.
         /// </summary>
+        /// <remarks>
+        /// To ensure correct enqueueing order, clients must synchronize execution of synchronous part of this method.
+        /// </remarks>
         /// <returns>Task which allows consumers to wait for a job to be dequeued and completed.</returns>
         /// <exception cref="ArgumentNullException">If <paramref name="partitionKey"/> or <paramref name="job"/> is null.</exception>
         [SuppressMessage("ReSharper", "UnusedMember.Global")]
@@ -61,7 +81,7 @@ namespace LimitedConcurrency
             {
                 entry = _dictionary.GetOrAdd(
                     partitionKey,
-                    _ => new Trackable<LimitedParallelExecutor>(new LimitedParallelExecutor(1)));
+                    _ => new Trackable<LimitedParallelExecutor>(new LimitedParallelExecutor(_partitionConcurrency)));
 
                 if (entry.GetIsNewOnce())
                 {
@@ -101,7 +121,6 @@ namespace LimitedConcurrency
                         _dictionary.TryRemove(partitionKey, out _);
                     }
                 }).ConfigureAwait(false);
-
             });
 
             return tcs.Task;
