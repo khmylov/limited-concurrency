@@ -36,16 +36,17 @@ Job A finished
 ## Notes
 
 - Executor maintains FIFO order, Tasks are started in the order they were enqueued
-- Executor schedules Tasks via `Task.Run`, i.e. on default thread pool scheduler, to ensure that executed is truly parallel even if passed `Func<Task>` implementations are synchronous and blocking.
+    - While the executor itself is thread-safe, multi-threaded concurrent clients may need synchronization to ensure correct enqueuing order.
+- Executor schedules Tasks via `Task.Run`, i.e. on default thread pool scheduler, to ensure that execution is truly parallel even if passed `Func<Task>` implementations are synchronous and blocking.
 
 # ConcurrentPartitioner
 
 Another common requirement in concurrent message processing is "partitioning":
 - Every message belongs to exactly one partition key, for example customer name in multi-tenant environment
 - Messages with different partition keys may be processed in parallel
-- Messages within the same partition key must be processed sequentially
+- Messages within the same partition key must be processed sequentially (or with a limited max concurrency level)
 
-`ConcurrentPartitioner` provides this exact behavior
+`ConcurrentPartitioner` provides such behavior.
 
 ```csharp
 async Task<int> Job(int delay, string message)
@@ -77,7 +78,10 @@ Job B2 finished
 ```
 
 ## Notes
-- Unlike `LimitedParallelExecutor`, this partitioner does guarantee FIFO order **across multiple partitions** (note that B1 may be started before A1)
+- Unlike `LimitedParallelExecutor`, this partitioner does not guarantee FIFO order **across multiple partitions** (note that B1 may be started before A1)
     - However, FIFO order is guaranteed within a single partition key
-- `ConcurrentPartitioner` uses `LimitedParallelExecutor` with `degreeOfParallelism: 1` for each partition key
+    - Just like with `LimitedParallelExecutor`, FIFO order is guaranteed when the clients synchronize access to the _synchronous_ part of `ExecuteAsync`
+- You can specify custom per partition concurrency limit via `ConcurrentPartitioner`'s constructor.
+    - This allows to implemented "keyed limiter" scenarios, e.g. executing not more than N concurrent jobs per partition at the same time.
 - You can wrap `ConcurrentPartitioner` into another `LimitedParallelExecutor` to enforce a global degree of parallelism across all partitions.
+- `ConcurrentPartitioner` is designed to automatically clean up its internal storage for unused partitions, so you don't have to worry about memory leaks if you generate a huge number of different partition keys over a long period of time.

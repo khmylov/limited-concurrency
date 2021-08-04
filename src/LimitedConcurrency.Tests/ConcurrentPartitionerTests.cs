@@ -72,22 +72,68 @@ namespace LimitedConcurrency.Tests
             var tasks = Enumerable.Range(1, taskCount)
                 .Select(taskIndex => SimulateParallelism(async () =>
                 {
-                    var partitionKey = (taskIndex % partitionsCount);
+                    var partitionKey = taskIndex % partitionsCount;
                     startSync.Wait();
                     for (var iterationIndex = 0; iterationIndex < iterationsPerTask; iterationIndex++)
                     {
                         await partitioner.ExecuteAsync(partitionKey.ToString(), async () =>
                         {
                             var value1 = Interlocked.Increment(ref processingState[partitionKey]);
+                            EnsureConcurrentPartitionCount(partitioner, partitionsCount);
                             Assert.AreEqual(
                                 1, value1,
                                 "If partitioner works correctly, then there should never be more than 1 message per partition processed at the same time");
                             await Task.Delay(1);
+                            EnsureConcurrentPartitionCount(partitioner, partitionsCount);
 
                             var value2 = Interlocked.Decrement(ref processingState[partitionKey]);
                             Assert.AreEqual(
                                 0, value2,
                                 "If partitioner works correctly, no other message in that partition should be able to interfere and change the counter value");
+                            Interlocked.Increment(ref completedCount);
+                            return null;
+                        });
+                    }
+                }))
+                .ToArray();
+
+            startSync.Set();
+            await Task.WhenAll(tasks);
+            Assert.AreEqual(taskCount * iterationsPerTask, completedCount);
+        }
+
+        [Test]
+        [Repeat(10)]
+        public async Task ShouldNotExceedCustomMaxConcurrency()
+        {
+            const int taskCount = 1000;
+            const int iterationsPerTask = 1;
+            const int partitionsCount = 40;
+            const int maxConcurrencyPerPartition = 4;
+
+            var completedCount = 0;
+            var startSync = new ManualResetEventSlim();
+
+            var processingState = Enumerable.Repeat(0, partitionsCount).ToArray();
+            var partitioner = CreatePartitioner<object?>(maxConcurrencyPerPartition);
+
+            var tasks = Enumerable.Range(1, taskCount)
+                .Select(taskIndex => SimulateParallelism(async () =>
+                {
+                    var partitionKey = taskIndex % partitionsCount;
+                    startSync.Wait();
+                    for (var iterationIndex = 0; iterationIndex < iterationsPerTask; iterationIndex++)
+                    {
+                        await partitioner.ExecuteAsync(partitionKey.ToString(), async () =>
+                        {
+                            var value1 = Interlocked.Increment(ref processingState[partitionKey]);
+                            EnsureConcurrentPartitionCount(partitioner, partitionsCount);
+                            Assert.That(value1, Is.LessThanOrEqualTo(maxConcurrencyPerPartition));
+                            await Task.Delay(1);
+                            EnsureConcurrentPartitionCount(partitioner, partitionsCount);
+
+                            var value2 = Interlocked.Decrement(ref processingState[partitionKey]);
+                            Assert.That(value2, Is.LessThanOrEqualTo(maxConcurrencyPerPartition));
                             Interlocked.Increment(ref completedCount);
                             return null;
                         });
@@ -269,8 +315,13 @@ namespace LimitedConcurrency.Tests
                 "All computations should be finished");
         }
 
-        private static ConcurrentPartitioner<T> CreatePartitioner<T>()
+        private static ConcurrentPartitioner<T> CreatePartitioner<T>(int? maxConcurrency = null)
         {
+            if (maxConcurrency.HasValue)
+            {
+                return new ConcurrentPartitioner<T>(maxConcurrency.Value);
+            }
+
             return new ConcurrentPartitioner<T>();
         }
 
