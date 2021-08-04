@@ -13,7 +13,15 @@ namespace LimitedConcurrency
     /// This class is a value wrapper which can be stored in such dictionary.
     /// It provides a lock-free mechanism to count the usages and go to special "closed" state once there are no more active usages.
     /// </remarks>
-    internal class Trackable<T>
+    /// <remarks>
+    /// Avoiding locks on highly contented scenarios provides 10x boost
+    ///
+    /// |                 Method |        Mean |     Error |   StdDev |      Median |
+    /// |----------------------- |------------:|----------:|---------:|------------:|
+    /// |             BTrackable |    99.99 ms |  7.510 ms | 21.67 ms |    89.95 ms |
+    /// |         BTrackableLock | 1,292.30 ms | 21.691 ms | 20.29 ms | 1,302.19 ms |
+    /// </remarks>
+    public class Trackable<T>
     {
         public readonly T Value;
         private int _currentCount;
@@ -46,7 +54,7 @@ namespace LimitedConcurrency
 
             do
             {
-                value = _currentCount;
+                value = Volatile.Read(ref _currentCount);
 
                 if (value == -1)
                 {
@@ -60,12 +68,17 @@ namespace LimitedConcurrency
         /// <summary>
         /// Decrements the current usage count. If it drops to 0, moves the wrapper into a closed state.
         /// </summary>
-        /// <returns>True if wrapper was moved to close state, False otherwise (meaning there are still active usages).</returns>
+        /// <returns>True if wrapper was moved to closed state or had no usage yet, False otherwise (meaning there are still active usages).</returns>
         public bool ExitAndTryCleanup()
         {
             while (true)
             {
-                var value = _currentCount;
+                var value = Volatile.Read(ref _currentCount);
+
+                // Note that if you want to make it reusable or expose via library,
+                // you should also check for `value < 1`, e.g. when ExitAndTryCleanup is called without preceding TryEnter.
+                // For now, all usages inside internal code are safe.
+
                 if (value == 1)
                 {
                     if (Interlocked.CompareExchange(ref _currentCount, -1, 1) == 1)

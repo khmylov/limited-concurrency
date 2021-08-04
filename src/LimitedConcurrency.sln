@@ -14,6 +14,8 @@ ProjectSection(SolutionItems) = preProject
 	..\CHANGELOG.md = ..\CHANGELOG.md
 EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LimitedConcurrency.Benchmarks", "LimitedConcurrency.Benchmarks\LimitedConcurrency.Benchmarks.csproj", "{A969CC8A-E1DD-4A3D-81E5-27A45127474D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,5 +30,9 @@ Global
 		{36973B26-FEC2-4F3F-9C88-258F335208A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{36973B26-FEC2-4F3F-9C88-258F335208A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{36973B26-FEC2-4F3F-9C88-258F335208A9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A969CC8A-E1DD-4A3D-81E5-27A45127474D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A969CC8A-E1DD-4A3D-81E5-27A45127474D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A969CC8A-E1DD-4A3D-81E5-27A45127474D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A969CC8A-E1DD-4A3D-81E5-27A45127474D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
