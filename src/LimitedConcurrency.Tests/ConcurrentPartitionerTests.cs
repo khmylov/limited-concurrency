@@ -29,7 +29,7 @@ namespace LimitedConcurrency.Tests
                 return newCounter;
             }
 
-            var partitioner = CreatePartitioner<int>();
+            var partitioner = CreatePartitioner();
 
             var sync1 = new ManualResetEventSlim(false);
             var sync2 = new ManualResetEventSlim(false);
@@ -67,7 +67,7 @@ namespace LimitedConcurrency.Tests
             var startSync = new ManualResetEventSlim();
 
             var processingState = Enumerable.Repeat(0, partitionsCount).ToArray();
-            var partitioner = CreatePartitioner<object?>();
+            var partitioner = CreatePartitioner();
 
             var tasks = Enumerable.Range(1, taskCount)
                 .Select(taskIndex => SimulateParallelism(async () =>
@@ -76,7 +76,7 @@ namespace LimitedConcurrency.Tests
                     startSync.Wait();
                     for (var iterationIndex = 0; iterationIndex < iterationsPerTask; iterationIndex++)
                     {
-                        await partitioner.ExecuteAsync(partitionKey.ToString(), async () =>
+                        await partitioner.ExecuteAsync<object?>(partitionKey.ToString(), async () =>
                         {
                             var value1 = Interlocked.Increment(ref processingState[partitionKey]);
                             EnsureConcurrentPartitionCount(partitioner, partitionsCount);
@@ -115,7 +115,7 @@ namespace LimitedConcurrency.Tests
             var startSync = new ManualResetEventSlim();
 
             var processingState = Enumerable.Repeat(0, partitionsCount).ToArray();
-            var partitioner = CreatePartitioner<object?>(maxConcurrencyPerPartition);
+            var partitioner = CreatePartitioner(maxConcurrencyPerPartition);
 
             var tasks = Enumerable.Range(1, taskCount)
                 .Select(taskIndex => SimulateParallelism(async () =>
@@ -124,7 +124,7 @@ namespace LimitedConcurrency.Tests
                     startSync.Wait();
                     for (var iterationIndex = 0; iterationIndex < iterationsPerTask; iterationIndex++)
                     {
-                        await partitioner.ExecuteAsync(partitionKey.ToString(), async () =>
+                        await partitioner.ExecuteAsync<object?>(partitionKey.ToString(), async () =>
                         {
                             var value1 = Interlocked.Increment(ref processingState[partitionKey]);
                             EnsureConcurrentPartitionCount(partitioner, partitionsCount);
@@ -157,14 +157,14 @@ namespace LimitedConcurrency.Tests
 
             var processingState = Enumerable.Repeat(0, partitionCount).ToArray();
 
-            var partitioner = CreatePartitioner<object?>();
+            var partitioner = CreatePartitioner();
 
             var messages = Enumerable.Range(1, taskCount)
                 .Select(taskNumber => (TaskId: taskNumber, PartitionKey: taskNumber % partitionCount))
                 .ToArray();
 
             var tasks = messages
-                .Select<(int TaskId, int PartitionKey), Task>(x => SimulateParallelism(() => partitioner.ExecuteAsync(
+                .Select<(int TaskId, int PartitionKey), Task>(x => SimulateParallelism(() => partitioner.ExecuteAsync<object?>(
                     x.PartitionKey.ToString(),
                     async () =>
                     {
@@ -193,11 +193,11 @@ namespace LimitedConcurrency.Tests
         [Test]
         public async Task OneFailedMessageShouldNotBlockOrFailFollowingMessagesInPartition()
         {
-            var partitioner = CreatePartitioner<object?>();
+            var partitioner = CreatePartitioner();
 
             Task<object?> Execute(int taskId)
             {
-                return partitioner.ExecuteAsync("Default", async () =>
+                return partitioner.ExecuteAsync<object?>("Default", async () =>
                 {
                     if (taskId == 0)
                     {
@@ -235,11 +235,11 @@ namespace LimitedConcurrency.Tests
             var canContinueInner =
                 new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            var partitioner = CreatePartitioner<object?>();
+            var partitioner = CreatePartitioner();
 
             Task<object?> Execute(int number)
             {
-                return partitioner.ExecuteAsync(number.ToString(), async () =>
+                return partitioner.ExecuteAsync<object?>(number.ToString(), async () =>
                 {
                     startSync.Wait();
                     startedFlags[number] = true;
@@ -285,11 +285,11 @@ namespace LimitedConcurrency.Tests
             var startedFlags = Enumerable.Range(1, count).Select(_ => false).ToArray();
             var completedFlags = Enumerable.Range(1, count).Select(_ => false).ToArray();
 
-            var partitioner = CreatePartitioner<object?>();
+            var partitioner = CreatePartitioner();
 
             var tasks = Enumerable
                 .Range(0, count)
-                .Select(number => SimulateParallelism(() => partitioner.ExecuteAsync(
+                .Select(number => SimulateParallelism(() => partitioner.ExecuteAsync<object?>(
                     (number % partitionCount).ToString(),
                     async () =>
                     {
@@ -315,14 +315,14 @@ namespace LimitedConcurrency.Tests
                 "All computations should be finished");
         }
 
-        private static ConcurrentPartitioner<T> CreatePartitioner<T>(int? maxConcurrency = null)
+        private static ConcurrentPartitioner CreatePartitioner(int? maxConcurrency = null)
         {
             if (maxConcurrency.HasValue)
             {
-                return new ConcurrentPartitioner<T>(maxConcurrency.Value);
+                return new ConcurrentPartitioner(maxConcurrency.Value);
             }
 
-            return new ConcurrentPartitioner<T>();
+            return new ConcurrentPartitioner();
         }
 
         private static Task WaitAsync(ManualResetEventSlim sync)
@@ -330,7 +330,7 @@ namespace LimitedConcurrency.Tests
             return Task.Run(sync.Wait);
         }
 
-        private static void EnsureConcurrentPartitionCount<T>(ConcurrentPartitioner<T> partitioner, int expectedMax)
+        private static void EnsureConcurrentPartitionCount(ConcurrentPartitioner partitioner, int expectedMax)
         {
             Assert.That(
                 partitioner.CurrentPartitionCount,

@@ -13,13 +13,12 @@ namespace LimitedConcurrency
     /// </summary>
     /// <remarks>
     /// Like with other data structures, to ensure FIFO order of the jobs with the same partition key,
-    /// multi-threaded clients must serialize invocation of synchronous part of <see cref="ExecuteAsync"/>,
+    /// multi-threaded clients must serialize invocation of synchronous part of <see cref="ExecuteAsync{TResult}"/>,
     /// i.e. retrieval of the returned <see cref="Task"/>.
     /// Awaiting the returned task does not need any synchronization.
     /// </remarks>
-    /// <typeparam name="TResult">Type of value returned by enqueued jobs.</typeparam>
     [SuppressMessage("ReSharper", "UnusedType.Global")]
-    public class ConcurrentPartitioner<TResult>
+    public class ConcurrentPartitioner
     {
         private readonly int _partitionConcurrency;
         private readonly ConcurrentDictionary<string, Trackable<LimitedParallelExecutor>> _dictionary = new();
@@ -69,9 +68,10 @@ namespace LimitedConcurrency
         /// To ensure correct enqueueing order, clients must synchronize execution of synchronous part of this method.
         /// </remarks>
         /// <returns>Task which allows consumers to wait for a job to be dequeued and completed.</returns>
+        /// <typeparam name="TResult">Type of value returned by enqueued jobs.</typeparam>
         /// <exception cref="ArgumentNullException">If <paramref name="partitionKey"/> or <paramref name="job"/> is null.</exception>
         [SuppressMessage("ReSharper", "UnusedMember.Global")]
-        public Task<TResult> ExecuteAsync(
+        public Task<TResult> ExecuteAsync<TResult>(
             string partitionKey,
             Func<Task<TResult>> job)
         {
@@ -79,7 +79,7 @@ namespace LimitedConcurrency
             if (job is null) throw new ArgumentNullException(nameof(job));
 
             var tcs = new TaskCompletionSource<TResult>();
-            var request = new PartitionRequest(job, tcs);
+            var request = new PartitionRequest<TResult>(job, tcs);
             Trackable<LimitedParallelExecutor> entry;
 
             while (true)
@@ -134,7 +134,7 @@ namespace LimitedConcurrency
         /// <remarks>
         /// This method should not throw exceptions
         /// </remarks>
-        private static async Task ExecuteImpl(PartitionRequest request, Action beforeResolveSafe)
+        private static async Task ExecuteImpl<TResult>(PartitionRequest<TResult> request, Action beforeResolveSafe)
         {
             TResult result;
             try
@@ -152,7 +152,7 @@ namespace LimitedConcurrency
             request.CompletionSource.TrySetResult(result);
         }
 
-        private readonly struct PartitionRequest
+        private readonly struct PartitionRequest<TResult>
         {
             public readonly Func<Task<TResult>> Action;
             public readonly TaskCompletionSource<TResult> CompletionSource;
