@@ -57,7 +57,7 @@ async Task<int> Job(int delay, string message)
     return 0;
 }
 
-var partitioner = new ConcurrentPartitioner<int>();
+var partitioner = new ConcurrentPartitioner();
 
 partitioner.ExecuteAsync("partition A", () => Job(100, "Job A1"));
 partitioner.ExecuteAsync("partition B", () => Job(100, "Job B1"));
