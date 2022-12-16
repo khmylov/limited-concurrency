@@ -20,6 +20,8 @@ namespace LimitedConcurrency
 
         private int _activeJobCount;
 
+        private readonly Action<object?> _scheduleNextCached;
+
         /// <param name="degreeOfParallelism">Controls how many Tasks can be run in parallel at any given moment.</param>
         /// <exception cref="ArgumentOutOfRangeException">If degree of parallelism is non-positive.</exception>
         public LimitedParallelExecutor(
@@ -29,6 +31,8 @@ namespace LimitedConcurrency
             _degreeOfParallelism = degreeOfParallelism;
 
             _queue = new ConcurrentQueue<Func<Task>>();
+            Action processNextCached = ProcessNextItem;
+            _scheduleNextCached = _ => Task.Run(processNextCached);
         }
 
         /// <summary>
@@ -37,7 +41,7 @@ namespace LimitedConcurrency
         /// <exception cref="NullReferenceException">If <paramref name="item"/> is null.</exception>
         public void Enqueue(Func<Task> item)
         {
-            if (item is null) throw new NullReferenceException(nameof(item));
+            if (item is null) throw new ArgumentNullException(nameof(item));
 
             lock (_queue)
             {
@@ -47,7 +51,7 @@ namespace LimitedConcurrency
                 if (_activeJobCount < _degreeOfParallelism)
                 {
                     _activeJobCount++;
-                    ScheduleNext(null);
+                    _scheduleNextCached(null);
                 }
             }
         }
@@ -58,10 +62,11 @@ namespace LimitedConcurrency
         [SuppressMessage("ReSharper", "UnusedMember.Global")]
         public int QueueLength => _queueLength;
 
-        private void ScheduleNext(object? _)
-        {
-            Task.Run(ProcessNextItem);
-        }
+        /// <summary>
+        /// Returns a number of jobs currently being executed.
+        /// </summary>
+        [SuppressMessage("ReSharper", "UnusedMember.Global")]
+        public int CurrentlyRunningCount => Volatile.Read(ref _activeJobCount);
 
         private void ProcessNextItem()
         {
@@ -74,7 +79,7 @@ namespace LimitedConcurrency
                 {
                     Interlocked.Decrement(ref _queueLength);
                     var task = nextItem();
-                    task.ContinueWith(ScheduleNext);
+                    task.ContinueWith(_scheduleNextCached);
                     scheduled = true;
                 }
             }
@@ -86,7 +91,7 @@ namespace LimitedConcurrency
                     {
                         if (!_queue.IsEmpty)
                         {
-                            ScheduleNext(null);
+                            _scheduleNextCached(null);
                         }
                         else
                         {
