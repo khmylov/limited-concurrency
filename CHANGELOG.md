@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LimitedParallelExecutor.ExecuteAsync` and `ConcurrentPartitioner.ExecuteAsync` now create `Task` with `TaskCreationOptions.RunContinuationsAsynchronously`
   - Previous implementation causes deadlocks in some cases
   - Technically a **breaking change**
+- Decrease allocations in `ConcurrentPartitioner`
 
 ## [2.1.0] - 2022-12-16
 ### Changed

@@ -86,7 +86,9 @@ namespace LimitedConcurrency
             {
                 entry = _dictionary.GetOrAdd(
                     partitionKey,
-                    _ => new Trackable<LimitedParallelExecutor>(new LimitedParallelExecutor(_partitionConcurrency)));
+                    (_, concurrency) => new Trackable<LimitedParallelExecutor>(
+                        new LimitedParallelExecutor(concurrency)),
+                    _partitionConcurrency);
 
                 if (entry.GetIsNewOnce())
                 {
@@ -117,15 +119,16 @@ namespace LimitedConcurrency
                     }
                 }
 
-                await ExecuteImpl(request, () =>
+                await ExecuteImpl(request, static arg =>
                 {
-                    Interlocked.Decrement(ref _totalQueueSize);
+                    var (instance, entry, partitionKey) = arg;
+                    Interlocked.Decrement(ref instance._totalQueueSize);
                     if (entry.ExitAndTryCleanup())
                     {
-                        Interlocked.Decrement(ref _currentPartitionCount);
-                        _dictionary.TryRemove(partitionKey, out _);
+                        Interlocked.Decrement(ref instance._currentPartitionCount);
+                        instance._dictionary.TryRemove(partitionKey, out _);
                     }
-                }).ConfigureAwait(false);
+                }, (instance: this, entry, partitionKey)).ConfigureAwait(false);
             });
 
             return tcs.Task;
@@ -134,7 +137,8 @@ namespace LimitedConcurrency
         /// <remarks>
         /// This method should not throw exceptions
         /// </remarks>
-        private static async Task ExecuteImpl<TResult>(PartitionRequest<TResult> request, Action beforeResolveSafe)
+        private static async Task ExecuteImpl<TArg, TResult>(
+            PartitionRequest<TResult> request, Action<TArg> beforeResolveSafe, TArg arg)
         {
             TResult result;
             try
@@ -143,12 +147,12 @@ namespace LimitedConcurrency
             }
             catch (Exception ex)
             {
-                beforeResolveSafe();
+                beforeResolveSafe(arg);
                 request.CompletionSource.TrySetException(ex);
                 return;
             }
 
-            beforeResolveSafe();
+            beforeResolveSafe(arg);
             request.CompletionSource.TrySetResult(result);
         }
 
