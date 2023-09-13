@@ -20,7 +20,7 @@ namespace LimitedConcurrency
                 return Task.FromCanceled<TResult>(cancellationToken);
             }
 
-            var tcs = new TaskCompletionSource<TResult>();
+            var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             executor.Enqueue(async () =>
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -58,7 +58,7 @@ namespace LimitedConcurrency
                 return Task.FromCanceled(cancellationToken);
             }
 
-            var tcs = new TaskCompletionSource<object?>();
+            var tcs = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
             executor.Enqueue(async () =>
             {
                 if (cancellationToken.IsCancellationRequested)

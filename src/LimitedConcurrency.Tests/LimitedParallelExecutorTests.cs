@@ -200,6 +200,89 @@ namespace LimitedConcurrency.Tests
             task1Failed.IsFaulted.ShouldBe(true);
         }
 
+        /// <remarks>
+        /// Common TaskCompletionSource pitfall, by default created Task instances run continuations inline,
+        /// therefore if the caller adds some blocking await/ContinueWith for job1, which unblocks only after job2 completes,
+        /// they will get a deadlock.
+        /// </remarks>
+        [Test]
+        [Timeout(10_000)]
+        public async Task ExecuteAsyncWithResult_ShouldRunContinuationsAsynchronously()
+        {
+            var executor = new LimitedParallelExecutor(1);
+            var allowFirstJobToStart = new ManualResetEventSlim(false);
+            var allowFirstContinuationToResolve = new ManualResetEventSlim(false);
+
+            var job1 = executor.ExecuteAsync(x =>
+            {
+                allowFirstJobToStart.Wait();
+                return Task.FromResult(x);
+            }, 1, default);
+
+            var job1WithContinuation = AddContinuation(job1);
+
+            var job2 = executor.ExecuteAsync(async x =>
+            {
+                await Task.Yield();
+                return x;
+            }, 2, default);
+
+            allowFirstJobToStart.Set();
+            await job1;
+            // If executor does not have TaskCreationOptions.RunContinuationsAsynchronously, job2 await will deadlock
+            await job2;
+            allowFirstContinuationToResolve.Set();
+
+            await job1WithContinuation;
+
+            async Task AddContinuation(Task t)
+            {
+                await t;
+                allowFirstContinuationToResolve.Wait();
+            }
+        }
+
+        /// <remarks>
+        /// Common TaskCompletionSource pitfall, by default created Task instances run continuations inline,
+        /// therefore if the caller adds some blocking await/ContinueWith for job1, which unblocks only after job2 completes,
+        /// they will get a deadlock.
+        /// </remarks>
+        [Test]
+        [Timeout(10_000)]
+        public async Task ExecuteAsync_ShouldRunContinuationsAsynchronously()
+        {
+            var executor = new LimitedParallelExecutor(1);
+            var allowFirstJobToStart = new ManualResetEventSlim(false);
+            var allowFirstContinuationToResolve = new ManualResetEventSlim(false);
+
+            var job1 = executor.ExecuteAsync(_ =>
+            {
+                allowFirstJobToStart.Wait();
+                return Task.CompletedTask;
+            }, 0, default);
+
+            var job1WithContinuation = AddContinuation(job1);
+
+            var job2 = executor.ExecuteAsync(async _ =>
+            {
+                await Task.Yield();
+            }, 0, default);
+
+            allowFirstJobToStart.Set();
+            await job1;
+            // If executor does not have TaskCreationOptions.RunContinuationsAsynchronously, job2 await will deadlock
+            await job2;
+            allowFirstContinuationToResolve.Set();
+
+            await job1WithContinuation;
+
+            async Task AddContinuation(Task t)
+            {
+                await t;
+                allowFirstContinuationToResolve.Wait();
+            }
+        }
+
         private static Task WaitAsync(ManualResetEventSlim handle)
         {
             // ReSharper disable once ConvertClosureToMethodGroup

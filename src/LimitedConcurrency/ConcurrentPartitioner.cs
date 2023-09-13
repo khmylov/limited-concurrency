@@ -78,7 +78,7 @@ namespace LimitedConcurrency
             if (partitionKey is null) throw new ArgumentNullException(nameof(partitionKey));
             if (job is null) throw new ArgumentNullException(nameof(job));
 
-            var tcs = new TaskCompletionSource<TResult>();
+            var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             var request = new PartitionRequest<TResult>(job, tcs);
             Trackable<LimitedParallelExecutor> entry;
 
