@@ -86,7 +86,7 @@ namespace LimitedConcurrency
             {
                 entry = _dictionary.GetOrAdd(
                     partitionKey,
-                    (_, concurrency) => new Trackable<LimitedParallelExecutor>(
+                    static (_, concurrency) => new Trackable<LimitedParallelExecutor>(
                         new LimitedParallelExecutor(concurrency)),
                     _partitionConcurrency);
 
