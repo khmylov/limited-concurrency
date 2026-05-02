@@ -10,24 +10,11 @@ internal static class TestUtils
 {
     public static async Task SpinWaitFor(Func<bool> condition)
     {
-        using var cancellationTokenSource = new CancellationTokenSource(Debugger.IsAttached ? 60_000 : 1000);
-        var cancellationToken = cancellationTokenSource.Token;
-        var winner = await Task.WhenAny(
-            Task.Delay(-1, cancellationToken),
-            Task.Run(() =>
-            {
-                var spinWait = new SpinWait();
-                while (!condition())
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    spinWait.SpinOnce();
-                }
-            }, cancellationToken)
-        ).ConfigureAwait(false);
-        cancellationToken.IsCancellationRequested.ShouldBe(false, $"{nameof(SpinWaitFor)} cancelled by a timeout");
-        await winner.ConfigureAwait(false);
+        var satisfied = await Task
+            .Run(() => SpinWait.SpinUntil(condition, Debugger.IsAttached ? 60_000 : 1000))
+            .ConfigureAwait(false);
+        satisfied.ShouldBe(true);
     }
-
 
     /// <summary>
     /// For some tests it's important to simulate truly concurrent activation of some async action,
