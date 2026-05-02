@@ -55,15 +55,15 @@ public class LimitedParallelExecutorTests
         // Should now start 2 jobs even though the first one is blocking...
         await SpinWaitFor(() => startedJobs[0] && startedJobs[1]);
         // ... but none jobs should be completed so far ...
-        completedJobs.ShouldBe(new[] {false, false, false});
+        completedJobs.ShouldBe([false, false, false]);
         // ... and Job 3 should still be queued due to max concurrency limit.
-        startedJobs.ShouldBe(new[] {true, true, false});
+        startedJobs.ShouldBe([true, true, false]);
 
         task1CanComplete.Set();
         // If we allow Job 1 to complete, it should be now possible to start Job 3 (due to max concurrency)
         await SpinWaitFor(() => completedJobs[0] && startedJobs[2]);
-        startedJobs.ShouldBe(new[] {true, true, true});
-        completedJobs.ShouldBe(new[] {true, false, false});
+        startedJobs.ShouldBe([true, true, true]);
+        completedJobs.ShouldBe([true, false, false]);
 
         task2CanComplete.Set();
         await SpinWaitFor(() => completedJobs[1]);
@@ -116,18 +116,18 @@ public class LimitedParallelExecutorTests
         executor.Enqueue(() => Execute(task4CanComplete, 3));
 
         await SpinWaitFor(() => startedJobs[1]);
-        startedJobs.ShouldBe(new[] {true, true, false, false});
-        completedJobs.ShouldBe(new[] {false, false, false, false});
+        startedJobs.ShouldBe([true, true, false, false]);
+        completedJobs.ShouldBe([false, false, false, false]);
 
         task2CanComplete.Set();
         await SpinWaitFor(() => completedJobs[1] && startedJobs[2]);
-        startedJobs.ShouldBe(new[] {true, true, true, false});
-        completedJobs.ShouldBe(new[] {false, true, false, false});
+        startedJobs.ShouldBe([true, true, true, false]);
+        completedJobs.ShouldBe([false, true, false, false]);
 
         task1CanComplete.Set();
         await SpinWaitFor(() => completedJobs[0] && startedJobs[3]);
-        startedJobs.ShouldBe(new[] {true, true, true, true});
-        completedJobs.ShouldBe(new[] {true, true, false, false});
+        startedJobs.ShouldBe([true, true, true, true]);
+        completedJobs.ShouldBe([true, true, false, false]);
 
         task3CanComplete.Set();
         task4CanComplete.Set();
