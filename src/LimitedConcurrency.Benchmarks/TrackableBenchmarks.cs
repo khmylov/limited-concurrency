@@ -6,6 +6,19 @@ using BenchmarkDotNet.Attributes;
 namespace LimitedConcurrency.Benchmarks;
 
 /*
+ * 2026-05-01
+ * BenchmarkDotNet v0.15.8, macOS Sequoia 15.7.2 (24G325) [Darwin 24.6.0]
+   Apple M1 Pro, 1 CPU, 10 logical and 10 physical cores
+   .NET SDK 10.0.101
+     [Host]     : .NET 10.0.1 (10.0.1, 10.0.125.57005), Arm64 RyuJIT armv8.0-a
+     Job-CNUJVU : .NET 10.0.1 (10.0.1, 10.0.125.57005), Arm64 RyuJIT armv8.0-a
+
+   InvocationCount=1  UnrollFactor=1
+
+   | Method           | Mean     | Error   | StdDev  |
+   |----------------- |---------:|--------:|--------:|
+   | ConcurrentAccess | 147.9 ms | 2.94 ms | 6.82 ms |
+
  * 2021-08-04
  * BenchmarkDotNet=v0.13.0, OS=Windows 10.0.19042.1110 (20H2/October2020Update)
    Intel Core i7-8700 CPU 3.20GHz (Coffee Lake), 1 CPU, 12 logical and 6 physical cores
@@ -41,11 +54,11 @@ public class TrackableBenchmarks
             {
                 if (_trackable.TryEnter())
                 {
-                    Thread.Yield();
+                    Thread.SpinWait(1);
                     _trackable.ExitAndTryCleanup();
                 }
 
-                Thread.Yield();
+                Thread.SpinWait(1);
             }
         })).ToArray();
 
