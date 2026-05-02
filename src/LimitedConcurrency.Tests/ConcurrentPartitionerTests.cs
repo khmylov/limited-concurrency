@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using NUnit.Framework;
 using Shouldly;
 using static LimitedConcurrency.Tests.TestUtils;
 
@@ -80,15 +79,13 @@ public class ConcurrentPartitionerTests
                     {
                         var value1 = Interlocked.Increment(ref processingState[partitionKey]);
                         EnsureConcurrentPartitionCount(partitioner, partitionsCount);
-                        Assert.AreEqual(
-                            1, value1,
+                        value1.ShouldBe(1,
                             "If partitioner works correctly, then there should never be more than 1 message per partition processed at the same time");
                         await Task.Delay(1);
                         EnsureConcurrentPartitionCount(partitioner, partitionsCount);
 
                         var value2 = Interlocked.Decrement(ref processingState[partitionKey]);
-                        Assert.AreEqual(
-                            0, value2,
+                        value2.ShouldBe(0,
                             "If partitioner works correctly, no other message in that partition should be able to interfere and change the counter value");
                         Interlocked.Increment(ref completedCount);
                         return null;
@@ -99,7 +96,7 @@ public class ConcurrentPartitionerTests
 
         startSync.Set();
         await Task.WhenAll(tasks);
-        Assert.AreEqual(taskCount * iterationsPerTask, completedCount);
+        completedCount.ShouldBe(taskCount * iterationsPerTask);
     }
 
     [Test]
@@ -143,7 +140,7 @@ public class ConcurrentPartitionerTests
 
         startSync.Set();
         await Task.WhenAll(tasks);
-        Assert.AreEqual(taskCount * iterationsPerTask, completedCount);
+        completedCount.ShouldBe(taskCount * iterationsPerTask);
     }
 
     [Test]
@@ -164,30 +161,29 @@ public class ConcurrentPartitionerTests
             .ToArray();
 
         var tasks = messages
-            .Select<(int TaskId, int PartitionKey), Task>(x => SimulateParallelism(() => partitioner.ExecuteAsync<object?>(
-                x.PartitionKey.ToString(),
-                async () =>
-                {
-                    EnsureConcurrentPartitionCount(partitioner, partitionCount);
-                    var value1 = Interlocked.Increment(ref processingState[x.PartitionKey]);
-                    Assert.AreEqual(
-                        1, value1,
-                        "If partitioner works correctly, then there should never be more than 1 message per partition processed at the same time");
-                    await Task.Yield();
-                    EnsureConcurrentPartitionCount(partitioner, partitionCount);
+            .Select<(int TaskId, int PartitionKey), Task>(x => SimulateParallelism(() =>
+                partitioner.ExecuteAsync<object?>(
+                    x.PartitionKey.ToString(),
+                    async () =>
+                    {
+                        EnsureConcurrentPartitionCount(partitioner, partitionCount);
+                        var value1 = Interlocked.Increment(ref processingState[x.PartitionKey]);
+                        value1.ShouldBe(1,
+                            "If partitioner works correctly, then there should never be more than 1 message per partition processed at the same time");
+                        await Task.Yield();
+                        EnsureConcurrentPartitionCount(partitioner, partitionCount);
 
-                    var value2 = Interlocked.Decrement(ref processingState[x.PartitionKey]);
-                    Assert.AreEqual(
-                        0, value2,
-                        "If partitioner works correctly, no other message in that partition should be able to interfere and change the counter value");
-                    Interlocked.Increment(ref completedCount);
-                    return null;
-                })))
+                        var value2 = Interlocked.Decrement(ref processingState[x.PartitionKey]);
+                        value2.ShouldBe(0,
+                            "If partitioner works correctly, no other message in that partition should be able to interfere and change the counter value");
+                        Interlocked.Increment(ref completedCount);
+                        return null;
+                    })))
             .ToArray();
         startSync.Set();
         await Task.WhenAll(tasks);
 
-        Assert.AreEqual(taskCount, completedCount);
+        completedCount.ShouldBe(taskCount);
     }
 
     [Test]
@@ -257,21 +253,18 @@ public class ConcurrentPartitionerTests
         startSync.Set();
         await SpinWaitFor(() => startedFlags.All(x => x));
 
-        Assert.AreEqual(
+        startedFlags.ShouldBe(
             Enumerable.Range(1, count).Select(_ => true).ToArray(),
-            startedFlags,
             "All computations should be started");
 
-        Assert.AreEqual(
+        completedFlags.ShouldBe(
             Enumerable.Range(1, count).Select(_ => false).ToArray(),
-            completedFlags,
             "None of computations should be completed yet");
 
         canContinueInner.SetResult(null);
         await Task.WhenAll(tasks);
-        Assert.AreEqual(
+        completedFlags.ShouldBe(
             Enumerable.Range(1, count).Select(_ => true).ToArray(),
-            completedFlags,
             "All computations should be finished");
     }
 
@@ -309,9 +302,8 @@ public class ConcurrentPartitionerTests
 
         Assert.That(partitioner.CurrentPartitionCount, Is.EqualTo(0));
 
-        Assert.AreEqual(
+        completedFlags.ShouldBe(
             Enumerable.Range(1, count).Select(_ => true).ToArray(),
-            completedFlags,
             "All computations should be finished");
     }
 
@@ -336,5 +328,4 @@ public class ConcurrentPartitionerTests
             partitioner.CurrentPartitionCount,
             Is.LessThanOrEqualTo(expectedMax));
     }
-
 }

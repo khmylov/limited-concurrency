@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using NUnit.Framework;
 using Shouldly;
 using static LimitedConcurrency.Tests.TestUtils;
 
@@ -206,7 +205,9 @@ public class LimitedParallelExecutorTests
     /// they will get a deadlock.
     /// </remarks>
     [Test]
+#pragma warning disable CS0618 // Type or member is obsolete
     [Timeout(10_000)]
+#pragma warning restore CS0618 // Type or member is obsolete
     public async Task ExecuteAsyncWithResult_ShouldRunContinuationsAsynchronously()
     {
         var executor = new LimitedParallelExecutor(1);
@@ -248,7 +249,9 @@ public class LimitedParallelExecutorTests
     /// they will get a deadlock.
     /// </remarks>
     [Test]
+#pragma warning disable CS0618 // Type or member is obsolete
     [Timeout(10_000)]
+#pragma warning restore CS0618 // Type or member is obsolete
     public async Task ExecuteAsync_ShouldRunContinuationsAsynchronously()
     {
         var executor = new LimitedParallelExecutor(1);
