@@ -31,8 +31,7 @@ public class LimitedParallelExecutor
         _degreeOfParallelism = degreeOfParallelism;
 
         _queue = new ConcurrentQueue<Func<Task>>();
-        Action processNextCached = ProcessNextItem;
-        _scheduleNextCached = _ => Task.Run(processNextCached);
+        _scheduleNextCached = _ => Task.Run(ProcessNextItem);
     }
 
     /// <summary>
