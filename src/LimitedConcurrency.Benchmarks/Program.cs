@@ -1,12 +1,11 @@
 ﻿using BenchmarkDotNet.Running;
 
-namespace LimitedConcurrency.Benchmarks
+namespace LimitedConcurrency.Benchmarks;
+
+public static class Program
 {
-    public static class Program
+    public static void Main()
     {
-        public static void Main()
-        {
-            BenchmarkRunner.Run<TrackableBenchmarks>();
-        }
+        BenchmarkRunner.Run<TrackableBenchmarks>();
     }
 }

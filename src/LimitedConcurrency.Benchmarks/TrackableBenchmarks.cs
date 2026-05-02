@@ -3,54 +3,53 @@ using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 
-namespace LimitedConcurrency.Benchmarks
+namespace LimitedConcurrency.Benchmarks;
+
+/*
+ * 2021-08-04
+ * BenchmarkDotNet=v0.13.0, OS=Windows 10.0.19042.1110 (20H2/October2020Update)
+   Intel Core i7-8700 CPU 3.20GHz (Coffee Lake), 1 CPU, 12 logical and 6 physical cores
+   .NET SDK=5.0.201
+     [Host]     : .NET 5.0.4 (5.0.421.11614), X64 RyuJIT
+     Job-VYZQXT : .NET 5.0.4 (5.0.421.11614), X64 RyuJIT
+
+   InvocationCount=1  UnrollFactor=1
+
+   |           Method |     Mean |    Error |   StdDev |   Median |
+   |----------------- |---------:|---------:|---------:|---------:|
+   | ConcurrentAccess | 203.4 ms | 14.45 ms | 41.70 ms | 183.0 ms |
+ */
+public class TrackableBenchmarks
 {
-    /*
-     * 2021-08-04
-     * BenchmarkDotNet=v0.13.0, OS=Windows 10.0.19042.1110 (20H2/October2020Update)
-       Intel Core i7-8700 CPU 3.20GHz (Coffee Lake), 1 CPU, 12 logical and 6 physical cores
-       .NET SDK=5.0.201
-         [Host]     : .NET 5.0.4 (5.0.421.11614), X64 RyuJIT
-         Job-VYZQXT : .NET 5.0.4 (5.0.421.11614), X64 RyuJIT
+    private Trackable<int> _trackable = default!;
 
-       InvocationCount=1  UnrollFactor=1
-
-       |           Method |     Mean |    Error |   StdDev |   Median |
-       |----------------- |---------:|---------:|---------:|---------:|
-       | ConcurrentAccess | 203.4 ms | 14.45 ms | 41.70 ms | 183.0 ms |
-     */
-    public class TrackableBenchmarks
+    [IterationSetup]
+    public void Setup()
     {
-        private Trackable<int> _trackable = default!;
+        _trackable = new Trackable<int>(5);
+    }
 
-        [IterationSetup]
-        public void Setup()
+    [Benchmark]
+    public async Task ConcurrentAccess()
+    {
+        var sync = new ManualResetEventSlim();
+        var tasks = Enumerable.Range(1, 100).Select(_ => Task.Run(() =>
         {
-            _trackable = new Trackable<int>(5);
-        }
-
-        [Benchmark]
-        public async Task ConcurrentAccess()
-        {
-            var sync = new ManualResetEventSlim();
-            var tasks = Enumerable.Range(1, 100).Select(_ => Task.Run(() =>
+            sync.Wait();
+            var counter = 0;
+            while (counter++ < 200_000)
             {
-                sync.Wait();
-                var counter = 0;
-                while (counter++ < 200_000)
+                if (_trackable.TryEnter())
                 {
-                    if (_trackable.TryEnter())
-                    {
-                        Thread.Yield();
-                        _trackable.ExitAndTryCleanup();
-                    }
-
                     Thread.Yield();
+                    _trackable.ExitAndTryCleanup();
                 }
-            })).ToArray();
 
-            sync.Set();
-            await Task.WhenAll(tasks);
-        }
+                Thread.Yield();
+            }
+        })).ToArray();
+
+        sync.Set();
+        await Task.WhenAll(tasks);
     }
 }
