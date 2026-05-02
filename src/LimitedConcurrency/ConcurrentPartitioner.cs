@@ -5,171 +5,170 @@ using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace LimitedConcurrency
+namespace LimitedConcurrency;
+
+/// <summary>
+/// Partitions jobs by the specified key to allow concurrent execution of jobs with the different keys,
+/// while jobs with the same key are executed with the specified max concurrency level (1 by default, i.e. sequentially).
+/// </summary>
+/// <remarks>
+/// Like with other data structures, to ensure FIFO order of the jobs with the same partition key,
+/// multi-threaded clients must serialize invocation of synchronous part of <see cref="ExecuteAsync{TResult}"/>,
+/// i.e. retrieval of the returned <see cref="Task"/>.
+/// Awaiting the returned task does not need any synchronization.
+/// </remarks>
+[SuppressMessage("ReSharper", "UnusedType.Global")]
+public class ConcurrentPartitioner
 {
+    private readonly int _partitionConcurrency;
+    private readonly ConcurrentDictionary<string, Trackable<LimitedParallelExecutor>> _dictionary = new();
+
+    public ConcurrentPartitioner()
+        : this(1)
+    {
+    }
+
+    /// <param name="partitionConcurrency">The max number of tasks to execute concurrently per partition.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="partitionConcurrency"/> is less than 1.</exception>
+    public ConcurrentPartitioner(int partitionConcurrency)
+    {
+        _partitionConcurrency = partitionConcurrency < 1
+            ? throw new ArgumentOutOfRangeException(nameof(partitionConcurrency), 1,
+                "Max partition concurrency should be a positive number")
+            : partitionConcurrency;
+    }
+
+    private volatile int _currentPartitionCount;
+
     /// <summary>
-    /// Partitions jobs by the specified key to allow concurrent execution of jobs with the different keys,
-    /// while jobs with the same key are executed with the specified max concurrency level (1 by default, i.e. sequentially).
+    /// Returns the number of different partition keys across all enqueued jobs.
+    /// </summary>
+    [SuppressMessage("ReSharper", "UnusedMember.Global")]
+    public int CurrentPartitionCount => _currentPartitionCount;
+
+    private volatile int _totalQueueSize;
+
+    /// <summary>
+    /// Returns the total number of enqueued jobs across all partitions.
+    /// </summary>
+    [SuppressMessage("ReSharper", "UnusedMember.Global")]
+    public int TotalQueueSize => _totalQueueSize;
+
+    /// <summary>
+    /// Invoked when a job is dequeued and is ready to be processed.
+    /// Allows consumers to track how long the job spent in the queue.
+    /// </summary>
+    [SuppressMessage("ReSharper", "EventNeverSubscribedTo.Global")]
+    public event Action<TimeSpan>? OnQueueWaitCompleted;
+
+    /// <summary>
+    /// Adds a job to the end of the queue with a specified partition key.
     /// </summary>
     /// <remarks>
-    /// Like with other data structures, to ensure FIFO order of the jobs with the same partition key,
-    /// multi-threaded clients must serialize invocation of synchronous part of <see cref="ExecuteAsync{TResult}"/>,
-    /// i.e. retrieval of the returned <see cref="Task"/>.
-    /// Awaiting the returned task does not need any synchronization.
+    /// To ensure correct enqueueing order, clients must synchronize execution of synchronous part of this method.
     /// </remarks>
-    [SuppressMessage("ReSharper", "UnusedType.Global")]
-    public class ConcurrentPartitioner
+    /// <returns>Task which allows consumers to wait for a job to be dequeued and completed.</returns>
+    /// <typeparam name="TResult">Type of value returned by enqueued jobs.</typeparam>
+    /// <exception cref="ArgumentNullException">If <paramref name="partitionKey"/> or <paramref name="job"/> is null.</exception>
+    [SuppressMessage("ReSharper", "UnusedMember.Global")]
+    public Task<TResult> ExecuteAsync<TResult>(
+        string partitionKey,
+        Func<Task<TResult>> job)
     {
-        private readonly int _partitionConcurrency;
-        private readonly ConcurrentDictionary<string, Trackable<LimitedParallelExecutor>> _dictionary = new();
+        if (partitionKey is null) throw new ArgumentNullException(nameof(partitionKey));
+        if (job is null) throw new ArgumentNullException(nameof(job));
 
-        public ConcurrentPartitioner()
-            : this(1)
+        var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var request = new PartitionRequest<TResult>(job, tcs);
+        Trackable<LimitedParallelExecutor> entry;
+
+        while (true)
         {
-        }
+            entry = _dictionary.GetOrAdd(
+                partitionKey,
+                static (_, concurrency) => new Trackable<LimitedParallelExecutor>(
+                    new LimitedParallelExecutor(concurrency)),
+                _partitionConcurrency);
 
-        /// <param name="partitionConcurrency">The max number of tasks to execute concurrently per partition.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="partitionConcurrency"/> is less than 1.</exception>
-        public ConcurrentPartitioner(int partitionConcurrency)
-        {
-            _partitionConcurrency = partitionConcurrency < 1
-                ? throw new ArgumentOutOfRangeException(nameof(partitionConcurrency), 1,
-                    "Max partition concurrency should be a positive number")
-                : partitionConcurrency;
-        }
-
-        private volatile int _currentPartitionCount;
-
-        /// <summary>
-        /// Returns the number of different partition keys across all enqueued jobs.
-        /// </summary>
-        [SuppressMessage("ReSharper", "UnusedMember.Global")]
-        public int CurrentPartitionCount => _currentPartitionCount;
-
-        private volatile int _totalQueueSize;
-
-        /// <summary>
-        /// Returns the total number of enqueued jobs across all partitions.
-        /// </summary>
-        [SuppressMessage("ReSharper", "UnusedMember.Global")]
-        public int TotalQueueSize => _totalQueueSize;
-
-        /// <summary>
-        /// Invoked when a job is dequeued and is ready to be processed.
-        /// Allows consumers to track how long the job spent in the queue.
-        /// </summary>
-        [SuppressMessage("ReSharper", "EventNeverSubscribedTo.Global")]
-        public event Action<TimeSpan>? OnQueueWaitCompleted;
-
-        /// <summary>
-        /// Adds a job to the end of the queue with a specified partition key.
-        /// </summary>
-        /// <remarks>
-        /// To ensure correct enqueueing order, clients must synchronize execution of synchronous part of this method.
-        /// </remarks>
-        /// <returns>Task which allows consumers to wait for a job to be dequeued and completed.</returns>
-        /// <typeparam name="TResult">Type of value returned by enqueued jobs.</typeparam>
-        /// <exception cref="ArgumentNullException">If <paramref name="partitionKey"/> or <paramref name="job"/> is null.</exception>
-        [SuppressMessage("ReSharper", "UnusedMember.Global")]
-        public Task<TResult> ExecuteAsync<TResult>(
-            string partitionKey,
-            Func<Task<TResult>> job)
-        {
-            if (partitionKey is null) throw new ArgumentNullException(nameof(partitionKey));
-            if (job is null) throw new ArgumentNullException(nameof(job));
-
-            var tcs = new TaskCompletionSource<TResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var request = new PartitionRequest<TResult>(job, tcs);
-            Trackable<LimitedParallelExecutor> entry;
-
-            while (true)
+            if (entry.GetIsNewOnce())
             {
-                entry = _dictionary.GetOrAdd(
-                    partitionKey,
-                    static (_, concurrency) => new Trackable<LimitedParallelExecutor>(
-                        new LimitedParallelExecutor(concurrency)),
-                    _partitionConcurrency);
+                Interlocked.Increment(ref _currentPartitionCount);
+            }
 
-                if (entry.GetIsNewOnce())
+            if (entry.TryEnter())
+            {
+                break;
+            }
+        }
+
+        Interlocked.Increment(ref _totalQueueSize);
+
+        entry.Value.Enqueue(async () =>
+        {
+            request.CreatedAt.Stop();
+            var onQueueWaitCompleted = OnQueueWaitCompleted;
+            if (onQueueWaitCompleted != null)
+            {
+                try
                 {
-                    Interlocked.Increment(ref _currentPartitionCount);
+                    onQueueWaitCompleted(request.CreatedAt.Elapsed);
                 }
-
-                if (entry.TryEnter())
+                catch
                 {
-                    break;
+                    // ignore, assuming it's the client's fault
                 }
             }
 
-            Interlocked.Increment(ref _totalQueueSize);
-
-            entry.Value.Enqueue(async () =>
+            await ExecuteImpl(request, static arg =>
             {
-                request.CreatedAt.Stop();
-                var onQueueWaitCompleted = OnQueueWaitCompleted;
-                if (onQueueWaitCompleted != null)
+                var (instance, entry, partitionKey) = arg;
+                Interlocked.Decrement(ref instance._totalQueueSize);
+                if (entry.ExitAndTryCleanup())
                 {
-                    try
-                    {
-                        onQueueWaitCompleted(request.CreatedAt.Elapsed);
-                    }
-                    catch
-                    {
-                        // ignore, assuming it's the client's fault
-                    }
+                    Interlocked.Decrement(ref instance._currentPartitionCount);
+                    instance._dictionary.TryRemove(partitionKey, out _);
                 }
+            }, (instance: this, entry, partitionKey)).ConfigureAwait(false);
+        });
 
-                await ExecuteImpl(request, static arg =>
-                {
-                    var (instance, entry, partitionKey) = arg;
-                    Interlocked.Decrement(ref instance._totalQueueSize);
-                    if (entry.ExitAndTryCleanup())
-                    {
-                        Interlocked.Decrement(ref instance._currentPartitionCount);
-                        instance._dictionary.TryRemove(partitionKey, out _);
-                    }
-                }, (instance: this, entry, partitionKey)).ConfigureAwait(false);
-            });
+        return tcs.Task;
+    }
 
-            return tcs.Task;
-        }
-
-        /// <remarks>
-        /// This method should not throw exceptions
-        /// </remarks>
-        private static async Task ExecuteImpl<TArg, TResult>(
-            PartitionRequest<TResult> request, Action<TArg> beforeResolveSafe, TArg arg)
+    /// <remarks>
+    /// This method should not throw exceptions
+    /// </remarks>
+    private static async Task ExecuteImpl<TArg, TResult>(
+        PartitionRequest<TResult> request, Action<TArg> beforeResolveSafe, TArg arg)
+    {
+        TResult result;
+        try
         {
-            TResult result;
-            try
-            {
-                result = await request.Action().ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                beforeResolveSafe(arg);
-                request.CompletionSource.TrySetException(ex);
-                return;
-            }
-
+            result = await request.Action().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
             beforeResolveSafe(arg);
-            request.CompletionSource.TrySetResult(result);
+            request.CompletionSource.TrySetException(ex);
+            return;
         }
 
-        private readonly struct PartitionRequest<TResult>
-        {
-            public readonly Func<Task<TResult>> Action;
-            public readonly TaskCompletionSource<TResult> CompletionSource;
-            public readonly Stopwatch CreatedAt;
+        beforeResolveSafe(arg);
+        request.CompletionSource.TrySetResult(result);
+    }
 
-            public PartitionRequest(
-                Func<Task<TResult>> action,
-                TaskCompletionSource<TResult> completionSource)
-            {
-                Action = action;
-                CompletionSource = completionSource;
-                CreatedAt = Stopwatch.StartNew();
-            }
+    private readonly struct PartitionRequest<TResult>
+    {
+        public readonly Func<Task<TResult>> Action;
+        public readonly TaskCompletionSource<TResult> CompletionSource;
+        public readonly Stopwatch CreatedAt;
+
+        public PartitionRequest(
+            Func<Task<TResult>> action,
+            TaskCompletionSource<TResult> completionSource)
+        {
+            Action = action;
+            CompletionSource = completionSource;
+            CreatedAt = Stopwatch.StartNew();
         }
     }
 }
