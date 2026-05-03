@@ -23,6 +23,9 @@ public class LimitedParallelExecutorTests
     /// Note that you may need to adjust tests if you remove this behavior, and simulate parallelism manually.
     /// </remarks>
     [Test]
+#pragma warning disable CS0618 // Type or member is obsolete
+    [Timeout(10_000)]
+#pragma warning restore CS0618 // Type or member is obsolete
     public async Task ShouldRunConcurrentlyEvenIfCallbacksAreSynchronous()
     {
         var task1CanComplete = new ManualResetEventSlim(false);
