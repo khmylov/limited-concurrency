@@ -137,6 +137,56 @@ public class LimitedParallelExecutorTests
             .ShouldBe(true, $"runningStates: {string.Join(",", runningStates)}");
     }
 
+    /// <remarks>
+    /// When `maxConcurrency` allows executing more than 1 enqueued job,
+    /// the implementation DOES NOT guarantee the executing order to match the queue order.
+    /// This is an overlook from the initial implementation rather than a deliberate design decision.
+    /// Let's explicitly acknowledge this in tests.
+    /// </remarks>
+    [Test]
+    [Repeat(10)]
+    public async Task ShouldAllowArbitraryOrderWhenMaxConcurrencyGreaterThanOne()
+    {
+        var job1PreStarted = new ManualResetEventSlim(false);
+        var job1CanPublishStarted = new ManualResetEventSlim(false);
+        var job1CanComplete = new ManualResetEventSlim(false);
+        var job2CanComplete = new ManualResetEventSlim(false);
+
+        var startedJobs = new bool[2];
+
+        Task Job1()
+        {
+            job1PreStarted.Set();
+            job1CanPublishStarted.Wait();
+            startedJobs[0] = true;
+            job1CanComplete.Wait();
+            return Task.CompletedTask;
+        }
+
+        Task Job2()
+        {
+            startedJobs[1] = true;
+            job2CanComplete.Wait();
+            return Task.CompletedTask;
+        }
+
+        var executor = new LimitedParallelExecutor(2);
+        executor.Enqueue(Job1);
+        executor.Enqueue(Job2);
+
+        try
+        {
+            await SpinWaitFor(() => job1PreStarted.IsSet && startedJobs[1]);
+            startedJobs.ShouldBe([false, true]);
+        }
+        finally
+        {
+            job1CanPublishStarted.Set();
+            job1CanComplete.Set();
+            job2CanComplete.Set();
+        }
+    }
+
     [Test]
     [Repeat(10)]
     public async Task ShouldNotExceedDegreeOfParallelism()

@@ -35,9 +35,17 @@ Job A finished
 
 ## Notes
 
-- Executor maintains FIFO order, Tasks are started in the order they were enqueued
-    - While the executor itself is thread-safe, multi-threaded concurrent clients may need synchronization to ensure correct enqueuing order.
+- Executor follows the order of the enqueued jobs, subject to the configured `degreeOfParallelism`:
+  - If `degreeOfParallelism = 1`, then the execution is strictly sequential and FIFO.
+  - If `degreeOfParallelism = N (N > 1)`, then up to `N` jobs may start concurrently in non-deterministic order.
+    ```
+    var executor = new LimitedParallelExecutor(degreeOfParallelism: 2);
+    executor.Enqueue(A); executor.Enqueue(B); executor.Enqueue(C);
+    // Job start order may be [A, B, C] or [B, A, C]; but C may never start before A or B.
+    ```
 - Executor schedules Tasks via `Task.Run`, i.e. on default thread pool scheduler, to ensure that execution is truly parallel even if passed `Func<Task>` implementations are synchronous and blocking.
+- While the executor itself is thread-safe, multi-threaded concurrent clients may need synchronization to ensure correct enqueuing order.
+- `void Enqueue(...)` method is fire-and-forget, but `Task<TResult> ExecuteAsync<TResult>(...)` is also provided if you need to await the job completion.
 
 # ConcurrentPartitioner
 
