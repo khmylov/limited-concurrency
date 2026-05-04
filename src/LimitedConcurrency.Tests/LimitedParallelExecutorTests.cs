@@ -78,7 +78,7 @@ public class LimitedParallelExecutorTests
     }
 
     [Test]
-    [Repeat(5)]
+    [Repeat(10)]
     public async Task ShouldNotExecuteMoreThanSpecifiedNumberOfConcurrentAsyncJobs()
     {
         /*
@@ -117,7 +117,7 @@ public class LimitedParallelExecutorTests
         executor.Enqueue(() => Execute(task3CanComplete, 2));
         executor.Enqueue(() => Execute(task4CanComplete, 3));
 
-        await SpinWaitFor(() => startedJobs[1]);
+        await SpinWaitFor(() => startedJobs[0] && startedJobs[1]);
         startedJobs.ShouldBe([true, true, false, false]);
         completedJobs.ShouldBe([false, false, false, false]);
 
