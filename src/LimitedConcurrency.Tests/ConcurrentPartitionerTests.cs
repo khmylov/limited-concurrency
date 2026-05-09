@@ -307,6 +307,136 @@ public class ConcurrentPartitionerTests
             "All computations should be finished");
     }
 
+    /// <remarks>
+    /// Common TaskCompletionSource pitfall, by default created Task instances run continuations inline,
+    /// therefore if the caller adds some blocking await/ContinueWith for job1, which unblocks only after job2 completes,
+    /// they will get a deadlock.
+    /// </remarks>
+    [Test]
+#pragma warning disable CS0618 // Type or member is obsolete
+    [Timeout(3_000)]
+#pragma warning restore CS0618 // Type or member is obsolete
+    public async Task ShouldRunContinuationsAsynchronously()
+    {
+        var executor = CreatePartitioner();
+        var allowFirstJobToStart = new ManualResetEventSlim(false);
+        var allowFirstContinuationToResolve = new ManualResetEventSlim(false);
+
+        const string partitionKey = "P1";
+        var job1 = executor.ExecuteAsync(partitionKey, () =>
+        {
+            allowFirstJobToStart.Wait();
+            return Task.FromResult(1);
+        });
+
+        var job1WithContinuation = AddContinuation(job1);
+
+        var job2 = executor.ExecuteAsync(partitionKey, async () =>
+        {
+            await Task.Yield();
+            return 2;
+        });
+
+        allowFirstJobToStart.Set();
+        await job1;
+        // If executor does not have TaskCreationOptions.RunContinuationsAsynchronously, job2 await will deadlock
+        await job2;
+        allowFirstContinuationToResolve.Set();
+
+        await job1WithContinuation;
+
+        async Task AddContinuation(Task t)
+        {
+            await t;
+            allowFirstContinuationToResolve.Wait();
+        }
+    }
+
+    /// <summary>
+    /// This will deadlock if the partitioner's ExecuteAsync runs the passed callback immediately on the current thread.
+    /// This comes from using <see cref="LimitedParallelExecutor"/> per partition,
+    /// which in turn has this behavior of scheduling jobs on thread pool.
+    /// This test just makes it explicit to check regressions.
+    /// </summary>
+    [Test]
+#pragma warning disable CS0618 // Type or member is obsolete
+    [Timeout(3_000)]
+#pragma warning restore CS0618 // Type or member is obsolete
+    public async Task ShouldRunExecuteCallbackOnThreadPool()
+    {
+        var partitioner = CreatePartitioner();
+        var gate = new ManualResetEventSlim();
+        var started = new ManualResetEventSlim();
+        var task = partitioner.ExecuteAsync("P1", async () =>
+        {
+            started.Set();
+            gate.Wait();
+            await Task.Yield();
+            return 12345;
+        });
+        started.Wait();
+        gate.Set();
+        var result = await task;
+        result.ShouldBe(12345);
+    }
+
+    /// <summary>
+    /// Similar to <see cref="ShouldRunExecuteCallbackOnThreadPool"/>, but stress-test with many concurrent partitions.
+    /// </summary>
+    [Test]
+#pragma warning disable CS0618 // Type or member is obsolete
+    [Timeout(5_000)]
+#pragma warning restore CS0618 // Type or member is obsolete
+    public async Task ShouldExecuteTasksOnThreadPoolMany()
+    {
+        const int count = 1000;
+        // Default thread pool size is much lower than the expected job count.
+        // With each job being sent to a thread pool:
+        //   - low MaxThreadCount leads to a deadlock
+        //   - low MinThreadCount leads thread starvation and slow injection of new threads, hitting the test timeout
+        // Hence, need to reconfigure thread pool to use more threads.
+        using var _ = ConfigureThreadPool(count + 10);
+
+        var partitioner = CreatePartitioner();
+        var gate = new ManualResetEventSlim();
+        var startedCount = 0;
+        var allStarted = new ManualResetEventSlim();
+        var tasks = Enumerable
+            .Range(1, count)
+            .Select(i => partitioner.ExecuteAsync(i.ToString(), async () =>
+            {
+                if (Interlocked.Increment(ref startedCount) == count)
+                {
+                    allStarted.Set();
+                }
+
+                gate.Wait();
+                await Task.Yield();
+                return i;
+            }))
+            .ToList();
+        allStarted.Wait();
+        gate.Set();
+        var results = await Task.WhenAll(tasks);
+        results.ShouldBeEquivalentTo(Enumerable.Range(1, count).ToArray());
+    }
+
+    /// <summary>
+    /// Sets min and max thread count in the thread pool, resets on dispose.
+    /// </summary>
+    private static IDisposable ConfigureThreadPool(int threadCount)
+    {
+        ThreadPool.GetMinThreads(out var originalMinWorkerThreads, out var originalMinCompletionPortThreads);
+        ThreadPool.GetMaxThreads(out var originalMaxWorkerThreads, out var originalMaxCompletionPortThreads);
+        ThreadPool.SetMaxThreads(threadCount, originalMaxCompletionPortThreads);
+        ThreadPool.SetMinThreads(threadCount, originalMinCompletionPortThreads);
+        return Disposable.Create(() =>
+        {
+            ThreadPool.SetMinThreads(originalMinWorkerThreads, originalMinCompletionPortThreads);
+            ThreadPool.SetMaxThreads(originalMaxWorkerThreads, originalMaxCompletionPortThreads);
+        });
+    }
+
     private static ConcurrentPartitioner CreatePartitioner(int? maxConcurrency = null)
     {
         if (maxConcurrency.HasValue)
