@@ -12,6 +12,9 @@ namespace LimitedConcurrency;
 [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
 public class LimitedParallelExecutor
 {
+    private static readonly Action<Task?, object?> _scheduleNextCached =
+        static (_, state) => Task.Run(((LimitedParallelExecutor)state!).ProcessNextItem);
+
     private readonly int _degreeOfParallelism;
 
     private readonly ConcurrentQueue<Func<Task>> _queue;
@@ -19,8 +22,6 @@ public class LimitedParallelExecutor
     private volatile int _queueLength;
 
     private int _activeJobCount;
-
-    private readonly Action<object?> _scheduleNextCached;
 
     /// <param name="degreeOfParallelism">Controls how many Tasks can be run in parallel at any given moment.</param>
     /// <exception cref="ArgumentOutOfRangeException">If degree of parallelism is non-positive.</exception>
@@ -31,7 +32,6 @@ public class LimitedParallelExecutor
         _degreeOfParallelism = degreeOfParallelism;
 
         _queue = new ConcurrentQueue<Func<Task>>();
-        _scheduleNextCached = _ => Task.Run(ProcessNextItem);
     }
 
     /// <summary>
@@ -50,7 +50,7 @@ public class LimitedParallelExecutor
             if (_activeJobCount < _degreeOfParallelism)
             {
                 _activeJobCount++;
-                _scheduleNextCached(null);
+                _scheduleNextCached(null, this);
             }
         }
     }
@@ -78,7 +78,7 @@ public class LimitedParallelExecutor
             {
                 Interlocked.Decrement(ref _queueLength);
                 var task = nextItem();
-                task.ContinueWith(_scheduleNextCached);
+                task.ContinueWith(_scheduleNextCached, this);
                 scheduled = true;
             }
         }
@@ -90,7 +90,7 @@ public class LimitedParallelExecutor
                 {
                     if (!_queue.IsEmpty)
                     {
-                        _scheduleNextCached(null);
+                        _scheduleNextCached(null, this);
                     }
                     else
                     {
