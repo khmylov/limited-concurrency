@@ -302,6 +302,9 @@ public class ConcurrentPartitionerTests
 
         Assert.That(partitioner.CurrentPartitionCount, Is.EqualTo(0));
 
+        startedFlags.ShouldBe(
+            Enumerable.Range(1, count).Select(_ => true).ToArray(),
+            "All computations should be started");
         completedFlags.ShouldBe(
             Enumerable.Range(1, count).Select(_ => true).ToArray(),
             "All computations should be finished");
