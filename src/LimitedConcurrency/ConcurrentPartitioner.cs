@@ -105,13 +105,14 @@ public class ConcurrentPartitioner
 
         entry.Value.Enqueue(async () =>
         {
-            request.CreatedAt.Stop();
             var onQueueWaitCompleted = OnQueueWaitCompleted;
             if (onQueueWaitCompleted != null)
             {
+                var elapsed = GetElapsedTime(request.CreatedAt);
+
                 try
                 {
-                    onQueueWaitCompleted(request.CreatedAt.Elapsed);
+                    onQueueWaitCompleted(elapsed);
                 }
                 catch
                 {
@@ -160,7 +161,7 @@ public class ConcurrentPartitioner
     {
         public readonly Func<Task<TResult>> Action;
         public readonly TaskCompletionSource<TResult> CompletionSource;
-        public readonly Stopwatch CreatedAt;
+        public readonly long CreatedAt;
 
         public PartitionRequest(
             Func<Task<TResult>> action,
@@ -168,7 +169,18 @@ public class ConcurrentPartitioner
         {
             Action = action;
             CompletionSource = completionSource;
-            CreatedAt = Stopwatch.StartNew();
+            CreatedAt = Stopwatch.GetTimestamp();
         }
+    }
+
+    private static TimeSpan GetElapsedTime(long startTimestamp)
+    {
+        var elapsedTimestampTicks = Stopwatch.GetTimestamp() - startTimestamp;
+
+        var elapsedTimeSpanTicks =
+            elapsedTimestampTicks / Stopwatch.Frequency * TimeSpan.TicksPerSecond
+            + elapsedTimestampTicks % Stopwatch.Frequency * TimeSpan.TicksPerSecond / Stopwatch.Frequency;
+
+        return TimeSpan.FromTicks(elapsedTimeSpanTicks);
     }
 }
