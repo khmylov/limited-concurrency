@@ -30,8 +30,8 @@ public class ConcurrentPartitionerTests
 
         var partitioner = CreatePartitioner();
 
-        var sync1 = new ManualResetEventSlim(false);
-        var sync2 = new ManualResetEventSlim(false);
+        var sync1 = new ManualResetEventSlim();
+        var sync2 = new ManualResetEventSlim();
 
         var task1 = partitioner.ExecuteAsync("Key1", () => Execute(sync1));
         var task2 = partitioner.ExecuteAsync("Key1", () => Execute(sync2));
@@ -322,8 +322,8 @@ public class ConcurrentPartitionerTests
     public async Task ShouldRunContinuationsAsynchronously()
     {
         var executor = CreatePartitioner();
-        var allowFirstJobToStart = new ManualResetEventSlim(false);
-        var allowFirstContinuationToResolve = new ManualResetEventSlim(false);
+        var allowFirstJobToStart = new ManualResetEventSlim();
+        var allowFirstContinuationToResolve = new ManualResetEventSlim();
 
         const string partitionKey = "P1";
         var job1 = executor.ExecuteAsync(partitionKey, () =>

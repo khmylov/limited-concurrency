@@ -28,9 +28,9 @@ public class LimitedParallelExecutorTests
 #pragma warning restore CS0618 // Type or member is obsolete
     public async Task ShouldRunConcurrentlyEvenIfCallbacksAreSynchronous()
     {
-        var task1CanComplete = new ManualResetEventSlim(false);
-        var task2CanComplete = new ManualResetEventSlim(false);
-        var task3CanComplete = new ManualResetEventSlim(false);
+        var task1CanComplete = new ManualResetEventSlim();
+        var task2CanComplete = new ManualResetEventSlim();
+        var task3CanComplete = new ManualResetEventSlim();
         const int maxConcurrency = 2;
 
         var runningCounter = 0;
@@ -89,10 +89,10 @@ public class LimitedParallelExecutorTests
          * -----|-wait---------------|-execute-|------------------------------> Task 4
          */
 
-        var task1CanComplete = new ManualResetEventSlim(false);
-        var task2CanComplete = new ManualResetEventSlim(false);
-        var task3CanComplete = new ManualResetEventSlim(false);
-        var task4CanComplete = new ManualResetEventSlim(false);
+        var task1CanComplete = new ManualResetEventSlim();
+        var task2CanComplete = new ManualResetEventSlim();
+        var task3CanComplete = new ManualResetEventSlim();
+        var task4CanComplete = new ManualResetEventSlim();
 
         const int maxConcurrency = 2;
 
@@ -150,10 +150,10 @@ public class LimitedParallelExecutorTests
     [Repeat(10)]
     public async Task ShouldAllowArbitraryOrderWhenMaxConcurrencyGreaterThanOne()
     {
-        var job1PreStarted = new ManualResetEventSlim(false);
-        var job1CanPublishStarted = new ManualResetEventSlim(false);
-        var job1CanComplete = new ManualResetEventSlim(false);
-        var job2CanComplete = new ManualResetEventSlim(false);
+        var job1PreStarted = new ManualResetEventSlim();
+        var job1CanPublishStarted = new ManualResetEventSlim();
+        var job1CanComplete = new ManualResetEventSlim();
+        var job2CanComplete = new ManualResetEventSlim();
 
         var startedJobs = new bool[2];
 
@@ -264,8 +264,8 @@ public class LimitedParallelExecutorTests
     public async Task ExecuteAsyncWithResult_ShouldRunContinuationsAsynchronously()
     {
         var executor = new LimitedParallelExecutor(1);
-        var allowFirstJobToStart = new ManualResetEventSlim(false);
-        var allowFirstContinuationToResolve = new ManualResetEventSlim(false);
+        var allowFirstJobToStart = new ManualResetEventSlim();
+        var allowFirstContinuationToResolve = new ManualResetEventSlim();
 
         var job1 = executor.ExecuteAsync(x =>
         {
@@ -308,8 +308,8 @@ public class LimitedParallelExecutorTests
     public async Task ExecuteAsync_ShouldRunContinuationsAsynchronously()
     {
         var executor = new LimitedParallelExecutor(1);
-        var allowFirstJobToStart = new ManualResetEventSlim(false);
-        var allowFirstContinuationToResolve = new ManualResetEventSlim(false);
+        var allowFirstJobToStart = new ManualResetEventSlim();
+        var allowFirstContinuationToResolve = new ManualResetEventSlim();
 
         var job1 = executor.ExecuteAsync(_ =>
         {
